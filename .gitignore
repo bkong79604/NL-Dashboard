@@ -1,0 +1,46 @@
+# ==============================================================================
+# 1. Environment & Sensitive Data (CRITICAL)
+# ==============================================================================
+# Never commit your live database credentials or API keys
+backend/.env
+backend/config.env
+.env
+.env.local
+
+# ==============================================================================
+# 2. Python Backend (Venv & Caches)
+# ==============================================================================
+# Python bytecode
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+backend/.venv/
+backend/venv/
+.venv/
+venv/
+ENV/
+
+# IDEs and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ==============================================================================
+# 3. JavaScript Frontend (Node & Builds)
+# ==============================================================================
+# Dependencies
+frontend/node_modules/
+node_modules/
+
+# Production build outputs
+frontend/dist/
+frontend/build/
+
+# Log files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
