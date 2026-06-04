@@ -16,6 +16,7 @@ A natural language interface for querying your database and generating dashboard
 
 ```bash
 ollama pull llama3.1:8b
+ollama pull sqlcoder:7b
 ```
 
 Verify it's available:
@@ -111,11 +112,11 @@ nl-dashboard/
 
 ## Example Queries to Try
 
-- "Show me the top 5 products by total revenue"
-- "Which customers placed the most orders in 1997?"
-- "What is the monthly sales trend across all years?"
-- "List all employees and their managers"
-- "Which country generated the most sales?"
+- "Show me the total tax amount by territory"
+- "How many total customer count we have by territory?"
+- "Use a pie chart to show the top 3 territory with the most customer count"
+- "Use a bar chart to show the top 5 territories with the most order count"
+- "How many orders we have for ship data ='2011-06-07'?"
 
 ---
 
