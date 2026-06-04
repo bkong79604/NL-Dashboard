@@ -2,11 +2,21 @@ import axios from "axios";
 
 const api = axios.create({
   baseURL: "http://localhost:8000",
-  timeout: 60000, // LLM calls can take a while locally
+  timeout: 60000,
 });
 
 /**
- * Send a plain English query to the backend.
+ * Step 1 — Classify if the query is data-related, off-topic, or meta.
+ * @param {string} query
+ * @returns {Promise<{ intent: string, message: string }>}
+ */
+export async function classifyQuery(query) {
+  const response = await api.post("/classify", { query });
+  return response.data;
+}
+
+/**
+ * Step 2 — Execute the data query and return results.
  * @param {string} query
  * @returns {Promise<QueryResponse>}
  */

@@ -38,6 +38,9 @@ source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+to activate venv later, use command prompt and run this:
+venv\Scripts\activate
+
 ### Configure the database connection
 
 Edit `.env` and fill in your SQL Server details:
@@ -121,3 +124,11 @@ nl-dashboard/
 - The backend enforces **SELECT-only** queries via both keyword blocking and AST parsing (`sqlglot`)
 - All data stays **local** — Ollama runs entirely on your machine
 - The database user in `.env` should ideally be a **read-only SQL user** for extra safety
+
+
+Find out the port number for SQL Server:
+SELECT local_net_address, local_tcp_port 
+FROM sys.dm_exec_connections 
+WHERE session_id = @@SPID
+
+Run it in SSMS with TCP/IP connection forced (File → New → Database Engine Query → Options >> → Connection Properties → Network protocol: TCP/IP), otherwise it returns null for both columns.

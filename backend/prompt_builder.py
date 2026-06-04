@@ -1,53 +1,105 @@
-def build_sql_prompt(user_query: str, schema: str) -> str:
-    """
-    Builds the initial prompt asking the LLM to generate a SQL SELECT query.
-    Uses sqlcoder's preferred prompt format for best results.
-    """
-    return f"""### Task
-Generate a SQL SELECT query for Microsoft SQL Server (T-SQL) to answer the following question.
+# ─────────────────────────────────────────────
+# Table descriptions — helps the LLM map plain
+# English concepts to the correct table names
+# ─────────────────────────────────────────────
+TABLE_DESCRIPTIONS = """
+Table Descriptions (use these to pick the correct table for each question):
+- Sales.Customer         : information about customers who place orders
+- Sales.SalesOrderHeader : individual sales orders/transactions (order date, total amount, status)
+- Sales.SalesOrderDetail : line items within each order (products, quantity, unit price)
+- Sales.SalesPerson      : salespeople and their performance metrics (quota, bonus, commission)
+- Sales.SalesTerritory   : geographic sales regions/territories and their sales performance
+- Sales.SpecialOffer     : discounts and promotional offers
+- Sales.SpecialOfferProduct : which products are linked to which special offers
+- Sales.Store            : stores that are customers (store name, sales person assigned)
+"""
 
-### Database Schema
-{schema}
+# ─────────────────────────────────────────────
+# Few-shot examples — teaches the LLM the
+# correct table/column names by example
+# ─────────────────────────────────────────────
+FEW_SHOT_EXAMPLES = """
+Examples of correct SQL queries:
 
-### Rules
-- Only generate SELECT statements. Never use INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE or any modifying statement.
-- Only use tables and columns explicitly listed in the schema above. Do not invent or assume any columns.
-- Always use the full schema-prefixed table name (e.g. Sales.SalesOrderHeader, not just SalesOrderHeader).
-- This is Microsoft SQL Server (T-SQL). Follow these syntax rules strictly:
-  * Use TOP N instead of LIMIT N (e.g. SELECT TOP 10 ... not SELECT ... LIMIT 10)
-  * Do NOT use NULLS FIRST or NULLS LAST — these are not supported
+Q: Show me the top 5 customers by total order value
+A: SELECT TOP 5 soh.CustomerID, SUM(soh.TotalDue) AS TotalOrderValue
+   FROM Sales.SalesOrderHeader soh
+   GROUP BY soh.CustomerID
+   ORDER BY TotalOrderValue DESC
+
+Q: List all sales territories and their total sales
+A: SELECT st.Name, st.SalesYTD
+   FROM Sales.SalesTerritory st
+   ORDER BY st.SalesYTD DESC
+
+Q: Which salesperson has the highest sales this year?
+A: SELECT TOP 1 sp.BusinessEntityID, sp.SalesYTD
+   FROM Sales.SalesPerson sp
+   ORDER BY sp.SalesYTD DESC
+
+Q: Show monthly order trends
+A: SELECT YEAR(soh.OrderDate) AS Year, MONTH(soh.OrderDate) AS Month,
+          COUNT(soh.SalesOrderID) AS OrderCount, SUM(soh.TotalDue) AS TotalSales
+   FROM Sales.SalesOrderHeader soh
+   GROUP BY YEAR(soh.OrderDate), MONTH(soh.OrderDate)
+   ORDER BY Year, Month
+"""
+
+# ─────────────────────────────────────────────
+# System prompt — sets the LLM persona and
+# strict rules, sent separately from the query
+# ─────────────────────────────────────────────
+SQL_SYSTEM_PROMPT = """You are an expert Microsoft SQL Server (T-SQL) query generator.
+Your only job is to convert natural language questions into valid T-SQL SELECT queries.
+
+You must follow these rules strictly:
+- Only generate SELECT statements. Never use INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, or TRUNCATE.
+- Only use tables and columns explicitly listed in the schema. Never invent or assume columns.
+- Always use the full schema-prefixed table name (e.g. Sales.SalesOrderHeader, not SalesOrderHeader).
+- This is Microsoft SQL Server (T-SQL):
+  * Use TOP N instead of LIMIT N
+  * Do NOT use NULLS FIRST or NULLS LAST
   * Do NOT use ILIKE — use LIKE instead
   * Use GETDATE() instead of NOW() or CURRENT_DATE
-- Return ONLY the raw SQL query with no explanation, no markdown, no code fences.
+  * Use YEAR(), MONTH(), DAY() for date parts
+- Return ONLY the raw SQL query. No explanation, no markdown, no code fences."""
+
+
+def build_sql_prompt(user_query: str, schema: str) -> tuple[str, str]:
+    """
+    Builds system + user prompt for SQL generation.
+    Returns (system_prompt, user_prompt) tuple.
+    """
+    system = SQL_SYSTEM_PROMPT
+
+    user = f"""### Database Schema
+{schema}
+
+{TABLE_DESCRIPTIONS}
+
+{FEW_SHOT_EXAMPLES}
 
 ### Question
 {user_query}
 
 ### SQL Query
 """
+    return system, user
 
 
-def build_retry_prompt(user_query: str, schema: str, failed_sql: str, error_message: str) -> str:
+def build_retry_prompt(user_query: str, schema: str, failed_sql: str, error_message: str) -> tuple[str, str]:
     """
-    Builds a retry prompt that includes the failed SQL and the error,
-    asking the LLM to correct it.
+    Builds system + user prompt for SQL retry after a failed attempt.
+    Returns (system_prompt, user_prompt) tuple.
     """
-    return f"""### Task
-A previously generated SQL query failed. Fix it so it runs correctly on Microsoft SQL Server (T-SQL).
+    system = SQL_SYSTEM_PROMPT
 
-### Database Schema
+    user = f"""### Database Schema
 {schema}
 
-### Rules
-- Only generate SELECT statements. Never use INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE or any modifying statement.
-- Only use tables and columns explicitly listed in the schema above. Do not invent or assume any columns.
-- Always use the full schema-prefixed table name (e.g. Sales.SalesOrderHeader, not just SalesOrderHeader).
-- This is Microsoft SQL Server (T-SQL). Follow these syntax rules strictly:
-  * Use TOP N instead of LIMIT N (e.g. SELECT TOP 10 ... not SELECT ... LIMIT 10)
-  * Do NOT use NULLS FIRST or NULLS LAST — these are not supported
-  * Do NOT use ILIKE — use LIKE instead
-  * Use GETDATE() instead of NOW() or CURRENT_DATE
-- Return ONLY the corrected raw SQL query with no explanation, no markdown, no code fences.
+{TABLE_DESCRIPTIONS}
+
+{FEW_SHOT_EXAMPLES}
 
 ### Original Question
 {user_query}
@@ -60,23 +112,22 @@ A previously generated SQL query failed. Fix it so it runs correctly on Microsof
 
 ### Corrected SQL Query
 """
+    return system, user
 
 
-def build_confirmation_prompt(user_query: str, sql: str) -> str:
+def build_confirmation_prompt(user_query: str) -> str:
     """
-    Builds a prompt asking the LLM to summarize what the SQL query does
-    in plain English for the user to confirm.
+    Builds a prompt that rephrases the user's question into a precise
+    data intent confirmation starting with "So I will...".
     """
-    return f"""You are a helpful assistant. A user asked a question and a SQL query was generated to answer it.
-Your task is to write ONE short, friendly sentence (max 30 words) describing what data will be retrieved.
-Do NOT mention SQL. Write as if explaining to a non-technical person.
-Do NOT ask the user to confirm. Just describe what will be shown.
+    return f"""You are a data assistant. A user has asked a business data question.
+Rephrase it into ONE clear, precise sentence starting with "So I will..." that describes 
+exactly what data will be retrieved. Be specific about grouping, sorting, filters, and limits.
+Keep it under 35 words. Do not mention SQL or databases.
 
 User question: {user_query}
 
-SQL query: {sql}
-
-Plain English description:"""
+Confirmation sentence:"""
 
 
 def build_chart_advice_prompt(user_query: str, columns: list[str]) -> str:

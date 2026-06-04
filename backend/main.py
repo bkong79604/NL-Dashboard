@@ -4,14 +4,13 @@ from pydantic import BaseModel
 
 from config import OLLAMA_MODEL
 from schema_loader import load_schema, invalidate_schema_cache
-from prompt_builder import build_confirmation_prompt
-from llm_client import generate, is_ollama_available
+from llm_client import is_ollama_available, get_model_status
+from intent_filter import classify_intent, get_off_topic_response, get_meta_response
 from retry_handler import run_query_with_retry, QueryFailedError
 from chart_advisor import suggest_chart_type
 
-app = FastAPI(title="NL Dashboard API", version="1.0.0")
+app = FastAPI(title="NL Dashboard API", version="2.0.0")
 
-# Allow requests from the React frontend (dev server)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://localhost:3000"],
@@ -23,75 +22,92 @@ app.add_middleware(
 
 # ---------- Request / Response Models ----------
 
-class QueryRequest(BaseModel):
+class UserQueryRequest(BaseModel):
     query: str
 
+class ClassifyResponse(BaseModel):
+    intent: str       # "DATA_QUERY" | "OFF_TOPIC" | "META_QUERY"
+    message: str      # populated for OFF_TOPIC and META_QUERY, empty for DATA_QUERY
 
 class QueryResponse(BaseModel):
-    confirmation: str       # Plain English summary of what will be shown
-    sql: str                # The generated SQL (for debug purposes, not shown to users)
+    sql: str
     columns: list[str]
     rows: list[dict]
     row_count: int
-    chart_type: str         # "table" | "bar" | "line" | "pie"
+    chart_type: str
 
 
 # ---------- Routes ----------
 
 @app.get("/health")
 def health_check():
-    """Check if the API and Ollama are running."""
-    ollama_ok = is_ollama_available()
+    """Check if the API and Ollama model are available."""
+    status = get_model_status()
     return {
         "status": "ok",
-        "ollama": "connected" if ollama_ok else "unavailable",
-        "model": OLLAMA_MODEL,
+        "ollama": "connected" if status["sql_model_available"] else "unavailable",
+        "model": status["sql_model"],
     }
 
 
-@app.post("/query", response_model=QueryResponse)
-def handle_query(request: QueryRequest):
+@app.post("/classify", response_model=ClassifyResponse)
+def classify(request: UserQueryRequest):
     """
-    Main endpoint. Accepts a plain English query, returns data + chart type.
+    Step 1 — Classify the user's intent:
+    - DATA_QUERY  → frontend proceeds directly to /query
+    - OFF_TOPIC   → return friendly redirect message, stop here
+    - META_QUERY  → return table/capability description, stop here
+    """
+    query = request.query.strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Query cannot be empty.")
+
+    intent = classify_intent(query)
+
+    if intent == "OFF_TOPIC":
+        return ClassifyResponse(
+            intent="OFF_TOPIC",
+            message=get_off_topic_response(query)
+        )
+
+    if intent == "META_QUERY":
+        return ClassifyResponse(
+            intent="META_QUERY",
+            message=get_meta_response(query)
+        )
+
+    return ClassifyResponse(intent="DATA_QUERY", message="")
+
+
+@app.post("/query", response_model=QueryResponse)
+def handle_query(request: UserQueryRequest):
+    """
+    Step 2 — Execute the data query directly, no confirmation step.
+    Uses sqlcoder:7b for SQL generation.
     """
     user_query = request.query.strip()
     if not user_query:
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
 
-    # Check Ollama is available
     if not is_ollama_available():
         raise HTTPException(
             status_code=503,
             detail="Ollama is not available. Please ensure it is running and the model is loaded."
         )
 
-    # Load schema context
     try:
         schema = load_schema()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to load database schema: {e}")
 
-    # Generate SQL + execute with retry
     try:
         sql, result = run_query_with_retry(user_query, schema)
     except QueryFailedError as e:
-        raise HTTPException(
-            status_code=422,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=422, detail=str(e))
 
-    # Generate plain English confirmation summary
-    try:
-        confirmation_prompt = build_confirmation_prompt(user_query, sql)
-        confirmation = generate(confirmation_prompt)
-    except Exception:
-        confirmation = "Here are the results based on your question."
-
-    # Determine best chart type
     chart_type = suggest_chart_type(user_query, result["columns"])
 
     return QueryResponse(
-        confirmation=confirmation,
         sql=sql,
         columns=result["columns"],
         rows=result["rows"],
@@ -102,7 +118,7 @@ def handle_query(request: QueryRequest):
 
 @app.post("/schema/reload")
 def reload_schema():
-    """Force a schema cache refresh (useful during development)."""
+    """Force a schema cache refresh."""
     invalidate_schema_cache()
     load_schema()
     return {"status": "Schema reloaded successfully."}

@@ -26,12 +26,14 @@ def run_query_with_retry(user_query: str, schema: str) -> tuple[str, dict]:
     for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
         # Build prompt: first attempt uses base prompt, retries include error context
         if attempt == 1:
-            prompt = build_sql_prompt(user_query, schema)
+            system_prompt, user_prompt = build_sql_prompt(user_query, schema)
         else:
-            prompt = build_retry_prompt(user_query, schema, last_sql, last_error)
+            system_prompt, user_prompt = build_retry_prompt(
+                user_query, schema, last_sql, last_error
+            )
 
-        # Ask LLM for SQL
-        raw_response = generate(prompt)
+        # Ask LLM for SQL — pass system and user prompts separately
+        raw_response = generate(user_prompt, system_prompt=system_prompt)
 
         # Validate the SQL
         try:

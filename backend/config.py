@@ -5,7 +5,7 @@ load_dotenv()
 
 # Database
 DB_DRIVER = os.getenv("DB_DRIVER", "ODBC Driver 17 for SQL Server")
-DB_SERVER = os.getenv("DB_SERVER", "127.0.0.1,52952")
+DB_SERVER = os.getenv("DB_SERVER", "127.0.0.1,1433")
 DB_NAME = os.getenv("DB_NAME", "AdventureWorks2022")
 DB_USER = os.getenv("DB_USER", "sa")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
@@ -27,11 +27,10 @@ else:
         f"&Encrypt=no"
     )
 
-print("DATABASE_URL:", DATABASE_URL)
-
 # Ollama
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "sqlcoder:7b")                  # SQL generation
+OLLAMA_GENERAL_MODEL = os.getenv("OLLAMA_GENERAL_MODEL", "llama3.1:8b") # Classification, off-topic, meta
 
 # App
 MAX_RETRY_ATTEMPTS = int(os.getenv("MAX_RETRY_ATTEMPTS", 3))
