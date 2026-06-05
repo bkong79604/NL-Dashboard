@@ -181,7 +181,12 @@ nl-dashboard/
 |---|---|
 | `Sales.Customer` | Customers who place orders |
 | `Sales.SalesOrderHeader` | Individual sales orders (date, total, status) |
+| `Sales.SalesOrderDetail` | Line items within each order (product, qty, price) |
+| `Sales.SalesPerson` | Salespeople and performance metrics |
 | `Sales.SalesTerritory` | Geographic sales regions and performance |
+| `Sales.SpecialOffer` | Discounts and promotional offers |
+| `Sales.SpecialOfferProduct` | Products linked to special offers |
+| `Sales.Store` | Stores that are customers |
 
 ---
 
